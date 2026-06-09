@@ -22,6 +22,10 @@ const rooms = new Map();
 
 const DEFAULT_SETTINGS = { rounds: 3, drawTime: 80, hints: 2, customWords: [] };
 
+// How long an empty room is kept before deletion, so a sole host's transient
+// disconnect (tunnel/wifi blip) doesn't nuke the room before they reconnect.
+const ROOM_GRACE_MS = 5 * 60 * 1000;
+
 function makeRoomId() {
   let id;
   do {
@@ -394,7 +398,13 @@ io.on("connection", (socket) => {
 
     if (room.players.size === 0) {
       clearTimers(room);
-      rooms.delete(room.id);
+      // Don't delete immediately. A sole host whose socket blips (common over a
+      // tunnel / wifi hiccup / backgrounded tab) would otherwise lose the room
+      // while their screen still shows it — and friends get "Room not found".
+      // Hold it for a grace period; any (re)join cancels the deletion.
+      room.deleteTimer = setTimeout(() => {
+        if (room.players.size === 0) rooms.delete(room.id);
+      }, ROOM_GRACE_MS);
       return;
     }
     if (socket.id === room.hostId) room.hostId = room.players.keys().next().value;
@@ -418,10 +428,15 @@ io.on("connection", (socket) => {
 });
 
 function joinRoom(socket, room, name) {
+  // Someone joined — cancel any pending empty-room deletion.
+  if (room.deleteTimer) { clearTimeout(room.deleteTimer); room.deleteTimer = null; }
   socket.join(room.id);
   socket.data.roomId = room.id;
   const clean = (name || "Player").toString().slice(0, 20).trim() || "Player";
   room.players.set(socket.id, { id: socket.id, name: clean, score: 0, lastGain: 0 });
+  // If the room had no live host (e.g. host reconnecting after a blip), the
+  // (re)joiner takes over as host so the lobby stays controllable.
+  if (!room.players.has(room.hostId)) room.hostId = socket.id;
   io.to(room.id).emit("system", { text: `${clean} joined.`, kind: "join" });
   broadcastPlayers(room);
   io.to(room.id).emit("room", snapshot(room));

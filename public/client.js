@@ -8,6 +8,10 @@ let players = [];
 let isDrawer = false;
 let myWord = null;
 let canDraw = false;
+// remembered so we can transparently re-join after a socket reconnect
+let myName = null;
+let myRoom = null;
+let joinedOnce = false;
 
 // ---- elements ----
 const $ = (id) => document.getElementById(id);
@@ -33,6 +37,7 @@ function nameOrPrompt() {
 $("createBtn").onclick = () => {
   const name = nameOrPrompt();
   if (!name) return;
+  myName = name;
   socket.emit("createRoom", { name, settings: {} }, (res) => {
     if (res?.ok) enterGame(res);
   });
@@ -41,6 +46,7 @@ $("createBtn").onclick = () => {
 $("joinBtn").onclick = () => {
   const name = nameOrPrompt();
   if (!name) return;
+  myName = name;
   const code = $("joinCode").value.trim().toUpperCase();
   if (!code) {
     $("homeError").textContent = "Enter a room code.";
@@ -52,12 +58,29 @@ $("joinBtn").onclick = () => {
   });
 };
 
+// After a dropped connection, Socket.IO reconnects with a NEW socket id. The
+// server treats that as a fresh socket, so we must re-join our room explicitly,
+// otherwise we'd sit on a stale screen for a room we're no longer in.
+socket.on("connect", () => {
+  if (!joinedOnce || !myRoom) return;
+  socket.emit("joinRoom", { roomId: myRoom, name: myName }, (res) => {
+    if (res?.ok) {
+      me = res.you;
+      applyRoom(res.snapshot);
+    } else {
+      addChat("Lost the room (it may have closed). Refresh to start over.", "sys-warn");
+    }
+  });
+});
+
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });
 $("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
 
 function enterGame(res) {
   me = res.you;
   room = res.snapshot;
+  myRoom = res.roomId;
+  joinedOnce = true;
   homeScreen.classList.remove("active");
   gameScreen.classList.add("active");
   $("roomCode").textContent = res.roomId;
