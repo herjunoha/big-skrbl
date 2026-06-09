@@ -1,11 +1,11 @@
-# start-game.ps1 — boots big skrbl + Cloudflare Tunnel, prints the public link.
-# Usage: right-click → Run with PowerShell, or:  .\start-game.ps1
+# start-game.ps1 - boots big skrbl + Cloudflare Tunnel, prints the public link.
+# Usage: right-click -> Run with PowerShell, or:  .\start-game.ps1
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 Set-Location $root
 
 Write-Host ""
-Write-Host "  big skrbl — starting up..." -ForegroundColor Cyan
+Write-Host "  big skrbl - starting up..." -ForegroundColor Cyan
 
 # --- resolve cloudflared (bundled binary in this folder, then PATH) ---
 $cf = $null
@@ -30,7 +30,7 @@ Write-Host "  Launching game server on port 3000..." -ForegroundColor DarkGray
 Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory $root -WindowStyle Minimized
 Start-Sleep -Seconds 2
 
-# 3. Cloudflare quick tunnel — capture its output to scan for the public URL
+# 3. Cloudflare quick tunnel - capture its output to scan for the public URL
 $log = Join-Path $env:TEMP "big-skrbl-cloudflared.log"
 $errLog = Join-Path $env:TEMP "big-skrbl-cloudflared.err.log"
 Remove-Item $log, $errLog -ErrorAction SilentlyContinue
@@ -59,7 +59,7 @@ if ($url) {
     Write-Host "    Share this link with everyone:" -ForegroundColor Green
     Write-Host "    $url" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "    (link copied to your clipboard — paste it in the group chat)" -ForegroundColor DarkGray
+    Write-Host "    (link copied to your clipboard - paste it in the group chat)" -ForegroundColor DarkGray
     Write-Host "  ===================================================================" -ForegroundColor Green
     try { Set-Clipboard -Value $url } catch {}
 } else {
