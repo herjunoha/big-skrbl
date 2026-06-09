@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>big skrbl — private rooms, no limit</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ===================== HOME (create / join) ===================== -->
+  <section id="home" class="screen active">
+    <div class="home-card">
+      <h1 class="logo">big&nbsp;<span>skrbl</span></h1>
+      <p class="tagline">Private rooms · no player limit</p>
+
+      <input id="nameInput" class="field" maxlength="20" placeholder="Your name" />
+
+      <div class="home-actions">
+        <button id="createBtn" class="btn primary">Create private room</button>
+        <div class="join-row">
+          <input id="joinCode" class="field" maxlength="6" placeholder="ROOM CODE" />
+          <button id="joinBtn" class="btn">Join</button>
+        </div>
+      </div>
+      <p id="homeError" class="error"></p>
+    </div>
+  </section>
+
+  <!-- ===================== GAME ===================== -->
+  <section id="game" class="screen">
+    <header class="topbar">
+      <div class="brand">big <span>skrbl</span></div>
+      <div class="round-info">
+        <span id="roundLabel">Lobby</span>
+      </div>
+      <div class="word-display">
+        <span id="wordSlots" class="word-slots"></span>
+        <span id="timer" class="timer"></span>
+      </div>
+      <div class="room-share">
+        <span class="room-code-label">Room</span>
+        <code id="roomCode"></code>
+        <button id="copyLink" class="btn tiny" title="Copy invite link">copy link</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <!-- Players -->
+      <aside class="players-panel">
+        <h3>Players (<span id="playerCount">0</span>)</h3>
+        <ul id="playerList"></ul>
+      </aside>
+
+      <!-- Canvas + tools -->
+      <div class="canvas-area">
+        <div id="overlay" class="overlay hidden"></div>
+        <canvas id="board" width="900" height="640"></canvas>
+
+        <div id="tools" class="tools hidden">
+          <div id="palette" class="palette"></div>
+          <div class="tool-group">
+            <label>Size</label>
+            <input id="size" type="range" min="2" max="40" value="6" />
+          </div>
+          <button id="eraserBtn" class="btn tiny">Eraser</button>
+          <button id="clearBtn" class="btn tiny">Clear</button>
+        </div>
+
+        <!-- Lobby controls live over the canvas before the game starts -->
+        <div id="lobbyPanel" class="lobby-panel">
+          <h2>Waiting in lobby</h2>
+          <p class="muted">Share the room code or invite link. Start when everyone's in.</p>
+          <div class="settings" id="settingsBox">
+            <label>Rounds <input id="setRounds" type="number" min="1" max="10" value="3" /></label>
+            <label>Draw time (s) <input id="setDrawTime" type="number" min="20" max="240" value="80" /></label>
+            <label>Letter hints <input id="setHints" type="number" min="0" max="5" value="2" /></label>
+            <label class="wide">Custom words (comma-separated, optional)
+              <textarea id="setWords" rows="2" placeholder="leave empty to use the default word bank"></textarea>
+            </label>
+          </div>
+          <button id="startBtn" class="btn primary">Start game</button>
+          <p id="lobbyHint" class="muted small"></p>
+        </div>
+      </div>
+
+      <!-- Chat / guesses -->
+      <aside class="chat-panel">
+        <ul id="chat" class="chat"></ul>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" class="field" autocomplete="off" placeholder="Type your guess..." />
+          <button class="btn" type="submit">Send</button>
+        </form>
+      </aside>
+    </main>
+  </section>
+
+  <!-- word-choice modal -->
+  <div id="chooseModal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Choose a word to draw</h3>
+      <div id="wordChoices" class="word-choices"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
