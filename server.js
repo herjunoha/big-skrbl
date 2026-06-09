@@ -26,6 +26,9 @@ const DEFAULT_SETTINGS = { rounds: 3, drawTime: 80, hints: 2, customWords: [] };
 // disconnect (tunnel/wifi blip) doesn't nuke the room before they reconnect.
 const ROOM_GRACE_MS = 5 * 60 * 1000;
 
+// How long the drawer has to pick a word before their turn is skipped.
+const WORD_CHOOSE_MS = Number(process.env.WORD_CHOOSE_MS) || 15 * 1000;
+
 function makeRoomId() {
   let id;
   do {
@@ -140,10 +143,17 @@ function nextTurn(room) {
   broadcastPlayers(room);
   io.to(drawerId).emit("choose", { choices: room.choices });
 
-  // Auto-pick if the drawer dawdles.
+  // If the drawer doesn't pick a word in time, skip their turn to the next
+  // player (don't auto-pick for them).
   room.between = setTimeout(() => {
-    if (room.state === "choosing") chooseWord(room, drawerId, pick(room.choices));
-  }, 15000);
+    if (room.state === "choosing" && room.currentDrawerId === drawerId) {
+      io.to(room.id).emit("system", {
+        text: `${room.players.get(drawerId)?.name || "Drawer"} didn't pick a word — turn skipped.`,
+        kind: "warn",
+      });
+      nextTurn(room);
+    }
+  }, WORD_CHOOSE_MS);
 }
 
 function chooseWord(room, drawerId, word) {
