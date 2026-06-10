@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { WORDS } from "./words.js";
+import { PHRASES } from "./words.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -20,14 +20,20 @@ const PORT = process.env.PORT || 3000;
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
-const DEFAULT_SETTINGS = { rounds: 3, drawTime: 80, hints: 2, customWords: [] };
+// drawersPerTurn: how many players draw the same phrase at once on one canvas.
+const DEFAULT_SETTINGS = { rounds: 3, drawTime: 80, hints: 2, drawersPerTurn: 4, customWords: [] };
+
+// Minimum players to start. Multi-drawer mode needs enough people that at least
+// one guesser remains after the drawer group is filled.
+const MIN_PLAYERS = 5;
 
 // How long an empty room is kept before deletion, so a sole host's transient
 // disconnect (tunnel/wifi blip) doesn't nuke the room before they reconnect.
 const ROOM_GRACE_MS = 5 * 60 * 1000;
 
-// How long the drawer has to pick a word before their turn is skipped.
-const WORD_CHOOSE_MS = Number(process.env.WORD_CHOOSE_MS) || 15 * 1000;
+// Pause between announcing the drawer group and the canvas going live, so
+// players can read who's drawing and get ready.
+const REVEAL_MS = 3 * 1000;
 
 function makeRoomId() {
   let id;
@@ -42,14 +48,7 @@ function pick(arr) {
 }
 
 function wordBank(room) {
-  return room.settings.customWords?.length >= 3 ? room.settings.customWords : WORDS;
-}
-
-function threeWords(room) {
-  const bank = wordBank(room);
-  const out = new Set();
-  while (out.size < 3 && out.size < bank.length) out.add(pick(bank));
-  return [...out];
+  return room.settings.customWords?.length >= 3 ? room.settings.customWords : PHRASES;
 }
 
 function publicPlayers(room) {
@@ -59,7 +58,7 @@ function publicPlayers(room) {
     score: p.score,
     isHost: p.id === room.hostId,
     guessed: room.guessed.has(p.id),
-    drawing: p.id === room.currentDrawerId,
+    drawing: room.currentDrawerIds.includes(p.id),
   }));
 }
 
@@ -71,7 +70,7 @@ function snapshot(room) {
     round: room.round,
     rounds: room.settings.rounds,
     drawTime: room.settings.drawTime,
-    currentDrawerId: room.currentDrawerId,
+    currentDrawerIds: room.currentDrawerIds,
     players: publicPlayers(room),
   };
 }
@@ -107,72 +106,58 @@ function startGame(room) {
 function beginRound(room) {
   room.round += 1;
   if (room.round > room.settings.rounds) return endGame(room);
-  // Everyone present at round start draws once, in join order.
+  // Everyone present at round start draws once, in join order, grouped into
+  // chunks of `drawersPerTurn`. A round ends when every group has drawn.
   room.drawOrder = [...room.players.keys()];
-  room.turnIndex = -1;
+  room.groupStart = 0;
   nextTurn(room);
 }
 
 function nextTurn(room) {
   clearTimers(room);
-  room.turnIndex += 1;
-  // Skip drawers who have since left.
-  while (
-    room.turnIndex < room.drawOrder.length &&
-    !room.players.has(room.drawOrder[room.turnIndex])
-  ) {
-    room.turnIndex += 1;
+  // Take the next group of still-present players from the join-order list.
+  const size = Math.max(1, room.settings.drawersPerTurn);
+  const drawers = [];
+  while (room.groupStart < room.drawOrder.length && drawers.length < size) {
+    const id = room.drawOrder[room.groupStart++];
+    if (room.players.has(id)) drawers.push(id);
   }
-  if (room.turnIndex >= room.drawOrder.length) return beginRound(room);
+  if (drawers.length === 0) return beginRound(room);
 
-  const drawerId = room.drawOrder[room.turnIndex];
-  room.currentDrawerId = drawerId;
-  room.word = null;
+  room.currentDrawerIds = drawers;
+  room.word = pick(wordBank(room));
   room.guessed = new Set();
   room.revealed = new Set();
   room.canvasOps = [];
-  room.state = "choosing";
-  room.choices = threeWords(room);
+  room.guessers = [...room.players.keys()].filter((id) => !drawers.includes(id));
+  room.state = "reveal";
 
   io.to(room.id).emit("turnStart", {
-    drawerId,
-    drawerName: room.players.get(drawerId).name,
+    drawerIds: drawers,
+    drawerNames: drawers.map((id) => room.players.get(id).name),
     round: room.round,
     rounds: room.settings.rounds,
   });
   broadcastPlayers(room);
-  io.to(drawerId).emit("choose", { choices: room.choices });
 
-  // If the drawer doesn't pick a word in time, skip their turn to the next
-  // player (don't auto-pick for them).
-  room.between = setTimeout(() => {
-    if (room.state === "choosing" && room.currentDrawerId === drawerId) {
-      io.to(room.id).emit("system", {
-        text: `${room.players.get(drawerId)?.name || "Drawer"} didn't pick a word — turn skipped.`,
-        kind: "warn",
-      });
-      nextTurn(room);
-    }
-  }, WORD_CHOOSE_MS);
+  // Brief pre-draw pause, then the canvas goes live for the whole group.
+  room.between = setTimeout(() => beginDrawing(room), REVEAL_MS);
 }
 
-function chooseWord(room, drawerId, word) {
-  if (room.state !== "choosing" || drawerId !== room.currentDrawerId) return;
-  if (!room.choices.includes(word)) word = pick(room.choices);
+function beginDrawing(room) {
+  if (room.state !== "reveal") return;
   clearTimers(room);
-
-  room.word = word;
   room.state = "drawing";
   room.timeLeft = room.settings.drawTime;
-  room.guessers = [...room.players.keys()].filter((id) => id !== drawerId);
 
   io.to(room.id).emit("drawStart", {
-    drawerId,
-    wordLength: word.length,
-    pattern: word.split("").map((c) => (c === " " ? " " : "_")).join(""),
+    drawerIds: room.currentDrawerIds,
+    wordLength: room.word.length,
+    pattern: room.word.split("").map((c) => (c === " " ? " " : "_")).join(""),
     drawTime: room.settings.drawTime,
   });
-  io.to(drawerId).emit("yourWord", { word });
+  // Every drawer in the group gets the full phrase.
+  for (const id of room.currentDrawerIds) io.to(id).emit("yourWord", { word: room.word });
 
   // Letter-reveal schedule: spread `hints` reveals across the back half of the timer.
   const lettersToReveal = Math.min(
@@ -239,7 +224,9 @@ function handleGuess(room, player, text) {
     io.to(player.id).emit("youGuessed", { word: room.word });
     broadcastPlayers(room);
 
-    if (room.guessers.every((id) => room.guessed.has(id))) endTurn(room, "allGuessed");
+    if (room.guessers.length && room.guessers.every((id) => room.guessed.has(id))) {
+      endTurn(room, "allGuessed");
+    }
     return;
   }
 
@@ -256,15 +243,18 @@ function endTurn(room, reason) {
   clearTimers(room);
   room.state = "turnEnd";
 
-  // Drawer earns the average of what guessers earned, scaled by hit rate.
-  const drawer = room.players.get(room.currentDrawerId);
+  // Each drawer in the group earns the average of what guessers earned, scaled
+  // by hit rate. They collaborated on one canvas, so they all get the bonus.
   const correctGuessers = room.guessers.filter((id) => room.guessed.has(id));
-  if (drawer && correctGuessers.length) {
+  if (correctGuessers.length && room.guessers.length) {
     const avg =
       correctGuessers.reduce((s, id) => s + (room.players.get(id)?.lastGain || 0), 0) /
       correctGuessers.length;
     const drawGain = Math.round(avg * (correctGuessers.length / room.guessers.length));
-    drawer.score += drawGain;
+    for (const id of room.currentDrawerIds) {
+      const drawer = room.players.get(id);
+      if (drawer) drawer.score += drawGain;
+    }
   }
   for (const p of room.players.values()) p.lastGain = 0;
 
@@ -281,7 +271,7 @@ function endTurn(room, reason) {
 function endGame(room) {
   clearTimers(room);
   room.state = "lobby";
-  room.currentDrawerId = null;
+  room.currentDrawerIds = [];
   const ranking = publicPlayers(room).sort((a, b) => b.score - a.score);
   io.to(room.id).emit("gameEnd", { ranking });
   broadcastPlayers(room);
@@ -303,10 +293,9 @@ io.on("connection", (socket) => {
       state: "lobby",
       round: 0,
       drawOrder: [],
-      turnIndex: -1,
-      currentDrawerId: null,
+      groupStart: 0,
+      currentDrawerIds: [],
       word: null,
-      choices: [],
       guessed: new Set(),
       revealed: new Set(),
       guessers: [],
@@ -328,7 +317,7 @@ io.on("connection", (socket) => {
     // Mid-turn joiner: replay the current canvas + masked word so they can play along.
     if (room.state === "drawing") {
       socket.emit("drawStart", {
-        drawerId: room.currentDrawerId,
+        drawerIds: room.currentDrawerIds,
         wordLength: room.word.length,
         pattern: maskedWord(room),
         drawTime: room.settings.drawTime,
@@ -341,8 +330,15 @@ io.on("connection", (socket) => {
   socket.on("startGame", () => {
     const room = currentRoom(socket);
     if (!room || socket.id !== room.hostId) return;
-    if (room.players.size < 2) {
-      socket.emit("system", { text: "Need at least 2 players to start.", kind: "warn" });
+    if (room.players.size < MIN_PLAYERS) {
+      socket.emit("system", { text: `Need at least ${MIN_PLAYERS} players to start.`, kind: "warn" });
+      return;
+    }
+    if (room.players.size <= room.settings.drawersPerTurn) {
+      socket.emit("system", {
+        text: "Need more players than drawers — someone has to guess!",
+        kind: "warn",
+      });
       return;
     }
     if (room.state !== "lobby") return;
@@ -356,23 +352,11 @@ io.on("connection", (socket) => {
     io.to(room.id).emit("settings", room.settings);
   });
 
-  socket.on("chooseWord", ({ word }) => {
-    const room = currentRoom(socket);
-    if (room) chooseWord(room, socket.id, word);
-  });
-
   socket.on("draw", (op) => {
     const room = currentRoom(socket);
-    if (!room || socket.id !== room.currentDrawerId || room.state !== "drawing") return;
+    if (!room || !room.currentDrawerIds.includes(socket.id) || room.state !== "drawing") return;
     room.canvasOps.push(op);
     socket.to(room.id).emit("draw", op);
-  });
-
-  socket.on("clearCanvas", () => {
-    const room = currentRoom(socket);
-    if (!room || socket.id !== room.currentDrawerId) return;
-    room.canvasOps = [];
-    socket.to(room.id).emit("clear");
   });
 
   socket.on("chat", ({ text }) => {
@@ -381,16 +365,22 @@ io.on("connection", (socket) => {
     const player = room.players.get(socket.id);
     if (!player) return;
 
-    const isDrawer = socket.id === room.currentDrawerId;
+    const isDrawer = room.currentDrawerIds.includes(socket.id);
     const alreadyGuessed = room.guessed.has(socket.id);
+    // "reveal" is the brief pre-draw pause + the active drawing phase.
+    const live = room.state === "drawing" || room.state === "reveal";
 
-    // During drawing, guessers' messages are routed through guess-checking.
-    if (room.state === "drawing" && !isDrawer && !alreadyGuessed) {
+    // Drawers are muted for their whole turn — they already know the phrase, so
+    // they can neither guess nor chat (no scoring, no leaking, no spam).
+    if (live && isDrawer) return;
+
+    // While the canvas is live, guessers' messages are routed through guess-checking.
+    if (room.state === "drawing" && !alreadyGuessed) {
       handleGuess(room, player, text);
-    } else if (room.state === "drawing" && (isDrawer || alreadyGuessed)) {
-      // Drawer + those who already solved share a "spectator" channel so they
-      // don't leak the word to active guessers.
-      const audience = [room.currentDrawerId, ...room.guessers.filter((id) => room.guessed.has(id))];
+    } else if (live && alreadyGuessed) {
+      // Players who already solved share a "spectator" channel (also seen by the
+      // drawers) so they don't leak the phrase to active guessers.
+      const audience = [...room.currentDrawerIds, ...room.guessers.filter((id) => room.guessed.has(id))];
       for (const id of audience) {
         io.to(id).emit("chat", { name: player.name, text, id: player.id, secret: true });
       }
@@ -419,12 +409,19 @@ io.on("connection", (socket) => {
     }
     if (socket.id === room.hostId) room.hostId = room.players.keys().next().value;
 
-    // If the active drawer bailed, end their turn early.
-    if (socket.id === room.currentDrawerId && (room.state === "drawing" || room.state === "choosing")) {
-      io.to(room.id).emit("system", { text: "Drawer left — skipping turn.", kind: "warn" });
-      clearTimers(room);
-      room.state = "drawing"; // satisfy endTurn's guard, then advance
-      endTurn(room, "drawerLeft");
+    const wasDrawer = room.currentDrawerIds.includes(socket.id);
+    room.currentDrawerIds = room.currentDrawerIds.filter((id) => id !== socket.id);
+
+    if (wasDrawer && room.currentDrawerIds.length === 0 && (room.state === "drawing" || room.state === "reveal")) {
+      // The whole drawing group left — skip the turn.
+      io.to(room.id).emit("system", { text: "All drawers left — skipping turn.", kind: "warn" });
+      if (room.state === "reveal") {
+        nextTurn(room); // still in the pre-draw pause; just advance
+      } else {
+        clearTimers(room);
+        room.state = "drawing"; // satisfy endTurn's guard, then advance
+        endTurn(room, "drawerLeft");
+      }
     } else if (room.state === "drawing") {
       // Removing a guesser might complete the round.
       room.guessers = room.guessers.filter((id) => id !== socket.id);
@@ -461,10 +458,13 @@ function sanitizeSettings(s = {}) {
   if (s.rounds != null) out.rounds = Math.max(1, Math.min(10, Number(s.rounds) || 3));
   if (s.drawTime != null) out.drawTime = Math.max(20, Math.min(240, Number(s.drawTime) || 80));
   if (s.hints != null) out.hints = Math.max(0, Math.min(5, Number(s.hints) || 0));
+  if (s.drawersPerTurn != null)
+    out.drawersPerTurn = Math.max(1, Math.min(8, Number(s.drawersPerTurn) || 4));
   if (Array.isArray(s.customWords)) {
+    // Phrases allowed, so the upper bound is generous.
     out.customWords = s.customWords
       .map((w) => String(w).trim().toLowerCase())
-      .filter((w) => w.length >= 2 && w.length <= 30)
+      .filter((w) => w.length >= 2 && w.length <= 40)
       .slice(0, 500);
   }
   return out;

@@ -1,21 +1,25 @@
-// Default English word bank. Rooms can also use a custom list (see room settings).
-export const WORDS = [
-  "apple", "banana", "guitar", "mountain", "river", "rocket", "pizza", "elephant",
-  "bicycle", "rainbow", "castle", "dragon", "pirate", "robot", "volcano", "island",
-  "ladder", "anchor", "balloon", "candle", "compass", "diamond", "feather", "hammer",
-  "igloo", "jellyfish", "kangaroo", "lighthouse", "magnet", "necklace", "octopus",
-  "pumpkin", "quilt", "scarecrow", "telescope", "umbrella", "violin", "windmill",
-  "xylophone", "yacht", "zebra", "astronaut", "butterfly", "campfire", "dolphin",
-  "earthquake", "fireworks", "glacier", "helicopter", "iceberg", "jungle", "kite",
-  "lantern", "mushroom", "ninja", "orbit", "parachute", "queen", "snowman",
-  "tornado", "unicorn", "vampire", "waterfall", "skeleton", "treasure", "wizard",
-  "cactus", "cookie", "donut", "engine", "fountain", "garden", "hamburger",
-  "iceberg", "jacket", "koala", "lemon", "mirror", "needle", "ocean", "pencil",
-  "rabbit", "spider", "tiger", "vacuum", "whale", "anchor", "bridge", "cloud",
-  "drum", "eagle", "flower", "ghost", "house", "island", "jewel", "knight",
-  "lion", "moon", "nest", "owl", "piano", "river", "snake", "tree", "wave",
-  "airplane", "basketball", "computer", "dinosaur", "guitar", "keyboard", "mountain",
-  "penguin", "sandwich", "telephone", "watermelon", "alligator", "binoculars",
-  "chandelier", "escalator", "firetruck", "lighthouse", "microscope", "skateboard",
-  "submarine", "trampoline", "wheelbarrow"
+// Default phrase bank (two-word phrases). Rooms can also supply a custom list
+// (see room settings) — the host's list overrides this when it has >= 3 entries.
+export const PHRASES = [
+  "ice cream", "hot dog", "french fries", "fire truck", "police car", "race car",
+  "school bus", "traffic light", "traffic jam", "full moon", "shooting star",
+  "sand castle", "tree house", "light house", "ferris wheel", "roller coaster",
+  "swimming pool", "soccer ball", "tennis racket", "baseball bat", "basketball hoop",
+  "ping pong", "video game", "board game", "playing cards", "chess board",
+  "alarm clock", "coffee cup", "tea pot", "frying pan", "washing machine",
+  "vacuum cleaner", "ceiling fan", "light bulb", "remote control", "mobile phone",
+  "laptop computer", "electric guitar", "drum kit", "movie theater", "super hero",
+  "secret agent", "pirate ship", "treasure chest", "desert island", "palm tree",
+  "ocean wave", "surf board", "scuba diver", "fishing rod", "sail boat",
+  "cruise ship", "life jacket", "beach ball", "sun glasses", "flip flops",
+  "camp fire", "sleeping bag", "hiking boots", "mountain peak", "ski slope",
+  "snow board", "ice skate", "hockey stick", "race track", "finish line",
+  "gold medal", "magic wand", "top hat", "bow tie", "wedding cake", "birthday cake",
+  "party hat", "gift box", "christmas tree", "easter egg", "haunted house",
+  "dog house", "bird cage", "fish tank", "spider web", "honey bee", "lady bug",
+  "flower pot", "watering can", "garden hose", "lawn mower", "mail box",
+  "street lamp", "stop sign", "gas station", "shopping cart", "vending machine",
+  "piggy bank", "paper plane", "rubber band", "birthday party", "space station",
+  "hot air balloon", "polar bear", "teddy bear", "rocking chair", "baby stroller",
+  "shopping mall", "ferris wheel", "snow man", "rain cloud"
 ];

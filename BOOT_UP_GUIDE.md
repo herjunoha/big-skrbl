@@ -84,10 +84,10 @@ The game server itself handles 37 connections easily (Node + Socket.IO does thou
 
 ## During the game
 
-- **Host controls Start.** Need ≥ 2 players; wait until most have joined — latecomers can still join mid-game (they get the current canvas + can guess the next turns).
-- One person draws, everyone else types guesses in chat. Faster correct guess = more points.
-- The drawer and people who already guessed correctly chat in a **separate channel** so they can't leak the word.
-- After every player has drawn (1 round), a **final scoreboard** shows, then it drops back to the lobby — you can immediately start another game.
+- **Host controls Start.** Need ≥ 5 players (and more players than drawers); wait until most have joined — latecomers can still join mid-game (they get the current canvas + can guess the next turns).
+- A group of players (4 by default, set by the host) all draw the **same phrase on one shared canvas at the same time**; everyone else types guesses in chat. Faster correct guess = more points, and every drawer in the group shares the drawing bonus.
+- The drawers and people who already guessed correctly chat in a **separate channel** so they can't leak the phrase.
+- After every group has drawn (1 round), a **final scoreboard** shows, then it drops back to the lobby — you can immediately start another game.
 
 ---
 

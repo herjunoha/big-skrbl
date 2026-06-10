@@ -112,7 +112,7 @@ function applyRoom(r) {
   $("startBtn").style.display = host ? "" : "none";
   $("settingsBox").querySelectorAll("input,textarea").forEach((el) => (el.disabled = !host));
   $("lobbyHint").textContent = host
-    ? "You're the host. Need at least 2 players."
+    ? "You're the host. Need at least 5 players."
     : "Waiting for the host to start...";
 }
 
@@ -140,6 +140,7 @@ socket.on("settings", (s) => {
   $("setRounds").value = s.rounds;
   $("setDrawTime").value = s.drawTime;
   $("setHints").value = s.hints;
+  $("setDrawers").value = s.drawersPerTurn;
 });
 
 // =====================================================================
@@ -152,10 +153,11 @@ function pushSettings() {
     rounds: +$("setRounds").value,
     drawTime: +$("setDrawTime").value,
     hints: +$("setHints").value,
+    drawersPerTurn: +$("setDrawers").value,
     customWords: $("setWords").value.split(",").map((w) => w.trim()).filter(Boolean),
   });
 }
-["setRounds", "setDrawTime", "setHints", "setWords"].forEach((id) =>
+["setRounds", "setDrawTime", "setHints", "setDrawers", "setWords"].forEach((id) =>
   $(id).addEventListener("change", pushSettings)
 );
 
@@ -188,34 +190,24 @@ socket.on("system", ({ text, kind }) => addChat(escapeHtml(text), `sys-${kind ||
 // =====================================================================
 // Turn flow
 // =====================================================================
-socket.on("turnStart", ({ drawerId, drawerName, round, rounds }) => {
-  isDrawer = drawerId === me;
+socket.on("turnStart", ({ drawerIds, drawerNames, round, rounds }) => {
+  isDrawer = drawerIds.includes(me);
   myWord = null;
   canDraw = false;
   clearBoard();
   $("roundLabel").textContent = `Round ${round} / ${rounds}`;
   $("lobbyPanel").classList.add("hidden");
   $("tools").classList.toggle("hidden", !isDrawer);
+  // Drawers are muted for the whole turn.
+  $("chatInput").disabled = isDrawer;
+  $("chatInput").placeholder = isDrawer ? "You're drawing — chat is off this turn" : "Type your guess...";
   $("wordSlots").textContent = "";
   $("timer").textContent = "";
-  showOverlay(isDrawer ? "Choose a word…" : `${drawerName} is choosing a word…`);
-  closeChooseModal();
-});
-
-socket.on("choose", ({ choices }) => {
-  const box = $("wordChoices");
-  box.innerHTML = "";
-  choices.forEach((w) => {
-    const b = document.createElement("button");
-    b.className = "btn primary";
-    b.textContent = w;
-    b.onclick = () => {
-      socket.emit("chooseWord", { word: w });
-      closeChooseModal();
-    };
-    box.appendChild(b);
-  });
-  $("chooseModal").classList.remove("hidden");
+  const who = drawerNames.join(", ");
+  const verb = drawerNames.length > 1 ? "are" : "is";
+  showOverlay(isDrawer
+    ? `You're drawing!\nGet ready…`
+    : `${who} ${verb} drawing…\nGet ready to guess!`);
 });
 
 socket.on("yourWord", ({ word }) => {
@@ -223,11 +215,15 @@ socket.on("yourWord", ({ word }) => {
   renderWord(word, true);
 });
 
-socket.on("drawStart", ({ pattern, drawTime }) => {
+socket.on("drawStart", ({ drawerIds, pattern, drawTime }) => {
+  // Mid-turn joiners learn here whether they're a drawer.
+  if (Array.isArray(drawerIds)) isDrawer = drawerIds.includes(me);
   hideOverlay();
   canDraw = isDrawer;
-  $("chatInput").placeholder = isDrawer ? "You're drawing — no guessing!" : "Type your guess...";
-  $("chatInput").disabled = false;
+  $("tools").classList.toggle("hidden", !isDrawer);
+  // Drawers stay muted; everyone else can guess.
+  $("chatInput").disabled = isDrawer;
+  $("chatInput").placeholder = isDrawer ? "You're drawing — chat is off this turn" : "Type your guess...";
   if (!myWord) renderWord(pattern, false);
   $("timer").textContent = drawTime;
 });
@@ -248,6 +244,9 @@ socket.on("turnEnd", ({ word, reason }) => {
   canDraw = false;
   $("tools").classList.add("hidden");
   $("timer").classList.remove("urgent");
+  // Re-enable chat between turns (drawers were muted during their turn).
+  $("chatInput").disabled = false;
+  $("chatInput").placeholder = "Type your guess...";
   renderWord(word, true);
   const msg =
     reason === "allGuessed" ? "Everyone guessed it!" :
@@ -260,6 +259,8 @@ socket.on("gameEnd", ({ ranking }) => {
   isDrawer = false;
   canDraw = false;
   $("tools").classList.add("hidden");
+  $("chatInput").disabled = false;
+  $("chatInput").placeholder = "Type your guess...";
   const podium = ranking
     .slice(0, 5)
     .map((p, i) => `${["🥇", "🥈", "🥉", "4.", "5."][i]} ${escapeHtml(p.name)} — ${p.score}`)
@@ -288,8 +289,6 @@ function showOverlay(text) {
   o.classList.remove("hidden");
 }
 function hideOverlay() { $("overlay").classList.add("hidden"); }
-
-function closeChooseModal() { $("chooseModal").classList.add("hidden"); }
 
 // =====================================================================
 // Canvas drawing
@@ -327,11 +326,6 @@ COLORS.forEach((c, i) => {
 
 $("size").addEventListener("input", (e) => (size = +e.target.value));
 $("eraserBtn").onclick = () => { erasing = true; };
-$("clearBtn").onclick = () => {
-  if (!canDraw) return;
-  clearBoard();
-  socket.emit("clearCanvas");
-};
 
 function canvasPos(e) {
   const rect = canvas.getBoundingClientRect();
@@ -376,7 +370,6 @@ canvas.addEventListener("touchend", endStroke);
 
 // incoming draw ops
 socket.on("draw", (op) => strokeSeg(op.from, op.to, op.color, op.size));
-socket.on("clear", clearBoard);
 socket.on("canvasReplay", (ops) => {
   clearBoard();
   ops.forEach((op) => strokeSeg(op.from, op.to, op.color, op.size));

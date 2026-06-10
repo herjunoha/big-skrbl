@@ -63,7 +63,6 @@
             <input id="size" type="range" min="2" max="40" value="6" />
           </div>
           <button id="eraserBtn" class="btn tiny">Eraser</button>
-          <button id="clearBtn" class="btn tiny">Clear</button>
         </div>
 
         <!-- Lobby controls live over the canvas before the game starts -->
@@ -74,8 +73,9 @@
             <label>Rounds <input id="setRounds" type="number" min="1" max="10" value="3" /></label>
             <label>Draw time (s) <input id="setDrawTime" type="number" min="20" max="240" value="80" /></label>
             <label>Letter hints <input id="setHints" type="number" min="0" max="5" value="2" /></label>
-            <label class="wide">Custom words (comma-separated, optional)
-              <textarea id="setWords" rows="2" placeholder="leave empty to use the default word bank"></textarea>
+            <label>Drawers per turn <input id="setDrawers" type="number" min="1" max="8" value="4" /></label>
+            <label class="wide">Custom phrases (comma-separated, optional)
+              <textarea id="setWords" rows="2" placeholder="leave empty to use the default phrase bank"></textarea>
             </label>
           </div>
           <button id="startBtn" class="btn primary">Start game</button>
@@ -93,14 +93,6 @@
       </aside>
     </main>
   </section>
-
-  <!-- word-choice modal -->
-  <div id="chooseModal" class="modal hidden">
-    <div class="modal-card">
-      <h3>Choose a word to draw</h3>
-      <div id="wordChoices" class="word-choices"></div>
-    </div>
-  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="client.js"></script>
